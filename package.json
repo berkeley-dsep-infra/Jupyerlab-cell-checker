@@ -63,11 +63,12 @@
     "@jupyterlab/ui-components": "^4.2.1",
     "@lumino/disposable": "^2.1.2",
     "@lumino/widgets": "^2.3.1",
+    "axios": "^1.7.7",
     "colorthief": "^2.4.0",
     "tesseract.js": "^5.1.0"
   },
   "devDependencies": {
-    "@jupyterlab/builder": "^4.0.0",
+    "@jupyterlab/builder": "^4.3.0",
     "@types/json-schema": "^7.0.11",
     "@types/node": "^20.12.12",
     "@types/react": "^18.0.26",
@@ -179,5 +180,6 @@
       "selector-no-vendor-prefix": null,
       "value-no-vendor-prefix": null
     }
-  }
+  },
+  "packageManager": "yarn@4.5.1"
 }
