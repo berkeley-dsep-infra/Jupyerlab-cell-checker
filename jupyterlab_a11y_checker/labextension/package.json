@@ -102,7 +102,12 @@
   },
   "jupyterlab": {
     "extension": true,
-    "outputDir": "jupyterlab_a11y_checker/labextension"
+    "outputDir": "jupyterlab_a11y_checker/labextension",
+    "_build": {
+      "load": "static/remoteEntry.06e6b8eab23911a981fe.js",
+      "extension": "./extension",
+      "style": "./style"
+    }
   },
   "eslintIgnore": [
     "node_modules",
