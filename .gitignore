@@ -2,7 +2,4 @@
 .yarn/cache/
 node_modules/
 __pycache__/
-<<<<<<< HEAD
 **/.ipynb_checkpoints/
-=======
->>>>>>> 74b9e5e0bc6b4d01bdcba8750f820a0c1c75afbc
