@@ -5,11 +5,11 @@ def start_ollama():
     print("Staring Ollama")
     try:
         # For Hub
-        ollama_path = os.path.abspath("/shared/jupyterlab-a11y-checker/")
+        ollama_path = os.path.abspath("/shared/jupyterlab-a11y-checker/ollama")
         
         # For Local Testing
-        # ollama_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../shared/ollama"))
-        subprocess.Popen([ollama_path, "./ollama serve &"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # ollama_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../shared/"))
+        subprocess.Popen([ollama_path, "serve"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         print("Ollama started successfully.")
     except Exception as e:
         print(f"Error starting Ollama: {e}")

@@ -510,7 +510,7 @@ async function sendImageToModel(imageData) {
             stream: false,
             images: [encodedImage]
         };
-        console.log("Alt-text generating...");
+        console.log("Alt-text generating....");
         // For Hub
         const response = await axios__WEBPACK_IMPORTED_MODULE_6___default().post("https://a11y-staging.datahub.berkeley.edu/user/chanbin.park/ollama/api/generate", payload, {
             headers: { 'Content-Type': 'application/json' }
@@ -907,4 +907,4 @@ class AltCellList extends _lumino_widgets__WEBPACK_IMPORTED_MODULE_3__.Widget {
 /***/ })
 
 }]);
-//# sourceMappingURL=lib_index_js.6db6953b788a636b7088.js.map
+//# sourceMappingURL=lib_index_js.88b12009760ff267e87b.js.map

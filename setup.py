@@ -1,5 +1,4 @@
 # __import__('setuptools').setup()
-
 from setuptools import setup, find_packages
 
 setup(
@@ -9,10 +8,16 @@ setup(
     install_requires=[
         'jupyterlab', 'requests'
     ],
-    entry_points={
-        'jupyter_server_extensions': [
-            'jupyterlab_a11y_checker = jupyterlab_a11y_checker.load_jupyter_server_extension',
-        ],
-    },
     include_package_data=True,
+    data_files=[
+        (
+            "etc/jupyter/jupyter_server_config.d",
+            ["jupyter-config/jupyter_server_config.d/jupyterlab_a11y_checker.json"],
+        ),
+    ],
+    # entry_points={
+    #     'jupyter_server.extension': [
+    #         'jupyterlab_a11y_checker = jupyterlab_a11y_checker'
+    #     ]
+    # },
 )

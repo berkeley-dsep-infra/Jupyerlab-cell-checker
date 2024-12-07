@@ -101,10 +101,20 @@
     "access": "public"
   },
   "jupyterlab": {
+    "discovery": {
+      "server": {
+        "managers": [
+          "pip"
+        ],
+        "base": {
+          "name": "jupyterlab_a11y_checker"
+        }
+      }
+    },
     "extension": true,
     "outputDir": "jupyterlab_a11y_checker/labextension",
     "_build": {
-      "load": "static/remoteEntry.06e6b8eab23911a981fe.js",
+      "load": "static/remoteEntry.1dd74ba450ce7b2ebd80.js",
       "extension": "./extension",
       "style": "./style"
     }

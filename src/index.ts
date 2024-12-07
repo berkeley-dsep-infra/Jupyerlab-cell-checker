@@ -506,7 +506,7 @@ async function sendImageToModel(imageData: string): Promise<string> {
           stream: false,
           images: [encodedImage]
       };
-      console.log("Alt-text generating...");
+      console.log("Alt-text generating....");
       // For Hub
       const response = await axios.post("https://a11y-staging.datahub.berkeley.edu/user/chanbin.park/ollama/api/generate", payload, {
           headers: { 'Content-Type': 'application/json' }

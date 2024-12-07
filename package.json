@@ -101,6 +101,16 @@
     "access": "public"
   },
   "jupyterlab": {
+    "discovery": {
+      "server": {
+        "managers": [
+          "pip"
+        ],
+        "base": {
+          "name": "jupyterlab_a11y_checker"
+        }
+      }
+    },
     "extension": true,
     "outputDir": "jupyterlab_a11y_checker/labextension"
   },
