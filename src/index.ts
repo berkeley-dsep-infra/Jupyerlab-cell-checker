@@ -15,6 +15,15 @@ import { Cell, CodeCell, ICellModel, MarkdownCell } from '@jupyterlab/cells';
 import Tesseract from 'tesseract.js';
 import axios from 'axios';
 import { createSpinner, stopSpinner } from './components/Spinner';
+import NProgress from 'nprogress';
+import 'nprogress/nprogress.css';
+
+NProgress.configure({
+  parent: '#progress-container', // Attach progress bar to the custom container
+  showSpinner: false,            // Hide the spinner (optional)
+  speed: 300,                    // Animation speed
+  minimum: 0.1                   // Start at 10% (optional)
+});
 
 
 function calculateContrast(foregroundHex: string, backgroundHex: string): number {
@@ -478,6 +487,33 @@ async function addToolbarButton(labShell: ILabShell, altCellList: AltCellList, n
   return button;
 }
 
+async function pullModel(modelName: string): Promise<boolean> {
+  try {
+    console.log("Pulling ", modelName);
+    NProgress.start();
+
+    const response = await axios.post(
+      'https://a11y-staging.datahub.berkeley.edu/user/chanbin.park/ollama/api/pull',
+      { name: modelName, stream: false },
+      { headers: { 'Content-Type': 'application/json' }, 
+
+        onDownloadProgress: (progressEvent) => {
+          if(progressEvent.total) {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            NProgress.set(percentCompleted / 100); // Update NProgress
+          }
+        } 
+      }
+    );
+    NProgress.done();
+    return response.data.status === "success";
+  } catch (error) {
+    console.error(`Error pulling model ${modelName}:`, error);
+    NProgress.done();
+    return false;
+  }
+}
+
 async function fetchImageAsBase64(imageUrl: string): Promise<string> {
   const response = await axios.get(imageUrl, { responseType: 'blob' });
   const imageBlob = response.data;
@@ -500,14 +536,14 @@ async function sendImageToModel(imageData: string): Promise<string> {
   try {
       let encodedImage = imageData.startsWith("data:image") ? imageData.split(",")[1] : await fetchImageAsBase64(imageData);
       const payload = {
-          model: "llava",
-          // prompt: "What is in this picture?",
+          model: "llava:7b",
           prompt: "What can the user understand from looking at this image, describe it up to 240 characters.",
           stream: false,
           images: [encodedImage]
       };
       console.log("Alt-text generating....");
       // For Hub
+      
       const response = await axios.post("https://a11y-staging.datahub.berkeley.edu/user/chanbin.park/ollama/api/generate", payload, {
           headers: { 'Content-Type': 'application/json' }
       });
@@ -608,13 +644,15 @@ class AltCellList extends Widget {
   private _cellMap: Map<string, HTMLElement[]>;
   private _notebookTracker: INotebookTracker;
   private _enableAltText: boolean;
+  private _ollamaDownloaded: boolean;
 
   constructor(notebookTracker: INotebookTracker) {
     super();
     this._cellMap = new Map<string, HTMLElement[]>();
     this._listCells = document.createElement('div');
     this._notebookTracker = notebookTracker;
-    this._enableAltText = true;
+    this._enableAltText = false;
+    this._ollamaDownloaded = false;
     this._listCells.style.maxHeight = "100vh";
     this._listCells.style.overflowY = "auto";
 
@@ -623,9 +661,13 @@ class AltCellList extends Widget {
     title.style.margin = '15px';
 
     // Alt-text Toggle Button
+    let enableAltTextContainer = document.createElement('div');
+    enableAltTextContainer.id = "progress-container";
+    enableAltTextContainer.style.display = 'flex';
+    enableAltTextContainer.style.flexDirection = 'column';
+
     let toggle = document.createElement('div');
     toggle.style.display = 'flex';
-    toggle.style.alignItems = 'center';
     toggle.style.margin = '10px';
 
     let altTextToggle = document.createElement('input');
@@ -635,20 +677,38 @@ class AltCellList extends Widget {
 
     let altTextToggleLabel = document.createElement("label");
     altTextToggleLabel.htmlFor = "altTextToggle";
-    altTextToggleLabel.textContent = "Alt-text auto generation";
+    altTextToggleLabel.textContent = "Enable alt-text auto generation";
 
     altTextToggle.addEventListener("change", () => {
-      this._enableAltText = altTextToggle.checked;
+      this.handleAltTextToggle(altTextToggle, altTextToggleLabel);
     });
 
-    
     this.node.appendChild(title);
 
+    enableAltTextContainer.appendChild(toggle);
     toggle.appendChild(altTextToggle);
     toggle.appendChild(altTextToggleLabel);
-    this.node.appendChild(toggle);
+    this.node.appendChild(enableAltTextContainer);
 
     this.node.appendChild(this._listCells);
+  }
+
+  async handleAltTextToggle(altTextToggle: HTMLInputElement, altTextToggleLabel: HTMLElement) {
+    this._enableAltText = altTextToggle.checked;
+    if (!this._ollamaDownloaded) {
+      altTextToggleLabel.textContent = "Please wait";
+      const status = await pullModel("llava:7b");
+      if (status) {
+        this._ollamaDownloaded = true;
+        altTextToggleLabel.textContent = "Alt-text auto generation (Enabled)";
+      } else {
+        altTextToggle.checked = false;
+        altTextToggleLabel.textContent = "Alt-text auto generation (Failed)";
+      }
+    }
+    else {
+      altTextToggleLabel.textContent = "Alt-text auto generation " + (this._enableAltText ? "(Enabled)" : "(Disabled)");
+    }
   }
 
   //add a button that would navigate to the cell having the issue

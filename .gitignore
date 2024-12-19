@@ -4,5 +4,6 @@ node_modules/
 __pycache__/
 **/.ipynb_checkpoints/
 lib/
-**/labextension/
+jupyterlab_a11y_checker/labextension/
+jupyterlab_a11y_checker/_version.py
 
