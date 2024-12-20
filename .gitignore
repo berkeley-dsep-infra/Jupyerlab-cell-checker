@@ -6,4 +6,4 @@ __pycache__/
 lib/
 jupyterlab_a11y_checker/labextension/
 jupyterlab_a11y_checker/_version.py
-
+dist/
