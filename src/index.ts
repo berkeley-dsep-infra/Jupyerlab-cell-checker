@@ -294,6 +294,7 @@ async function checkCodeCellForImageWithAccessIssues(cell: Cell, myPath: string)
 
 async function checkAllCells(notebookContent: Notebook, altCellList: AltCellList, isEnabled: () => boolean, myPath: string, firstTime: boolean) {
   const headingsMap: Array<{headingLevel: number, myCell: Cell, heading: string }> = [];
+  let h1Exists = false;
 
   notebookContent.widgets.forEach(async cell => {
     if (isEnabled()){
@@ -318,14 +319,17 @@ async function checkAllCells(notebookContent: Notebook, altCellList: AltCellList
         while ((match = markdownHeadingRegex.exec(cellText)) !== null) {
           const level = match[1].length;  // The level is determined by the number of '#'
           headingsMap.push({headingLevel: level, heading: `${match[2].trim()}`, myCell: mCell});
+          if (level === 1) h1Exists = true;
         }
 
         while ((match = htmlHeadingRegex.exec(cellText)) !== null) {
           const level = parseInt(match[1]);  // The level is directly captured by the regex
           headingsMap.push({headingLevel: level, heading: `${match[2].trim()}`, myCell: mCell });
+          if (level === 1) h1Exists = true;
+
         }
       }
-      
+
       if (headingsMap.length > 0){
         let previousLevel = headingsMap[0].headingLevel;
         let highestLevel = previousLevel;
@@ -361,6 +365,21 @@ async function checkAllCells(notebookContent: Notebook, altCellList: AltCellList
       applyVisualIndicator(altCellList, cell, []);
     }
   });
+
+  if (!h1Exists) {
+    const cells = notebookContent.widgets;
+    
+    // find the first markdown cell and apply no h1 error
+    for (const cell of cells) {
+      if (cell.model.type === 'markdown') {
+        applyVisualIndicator(altCellList, cell, ["h1 header"]);
+        break; 
+      }
+    }
+  
+    //console.log("No h1 header in notebook detected");
+  }
+
   altCellList.showOnlyVisibleCells();
 }
 
@@ -412,7 +431,11 @@ function applyVisualIndicator(altCellList: AltCellList, cell: Cell, listIssues: 
     } else if (listIssues[i] == "Alt") {
       altCellList.addCell(cell.model.id, "Cell Error: Missing Alt Tag");
       applyIndic = true;
-    } else {
+    } else if (listIssues[i] == "h1 header") {
+      altCellList.addCell(cell.model.id, "Header format: Missing h1 header");
+      applyIndic = true;
+    } 
+    else {
       var score = Number(listIssues[i].split(" ")[0]);
       if (score < 9) {
         altCellList.addCell(cell.model.id, "Image Err: High Image Transparency (" + ((10-score)*10).toFixed(2) + "%)");
@@ -553,19 +576,155 @@ class AltCellList extends Widget {
   private _cellMap: Map<string, HTMLElement[]>;
   private _notebookTracker: INotebookTracker;
 
+  // add sections for grouping buttons to make side bar UI nicer
+  private _sections: Map<string, HTMLElement>;
+
+  //keep track of error groups
+  private _errorCategoryMap: Map<string, Set<string>> = new Map();
+
+  private initializeErrorSectionsMap(): void {
+    this._errorCategoryMap.set("Header Errors", new Set());
+    this._errorCategoryMap.set("Alt Text Errors", new Set());
+    this._errorCategoryMap.set("Contrast Errors", new Set());
+    this._errorCategoryMap.set("Transparency Errors", new Set());
+  }
+
+  //booleans for the different types of headers
+  private _headerErrors: boolean; 
+  private _headerErrorAdded: boolean; //to prevent duplicate headers
+
+  private _altErrors: boolean; 
+  private _altErrorAdded: boolean; 
+
+  private _transparencyErrors: boolean; 
+  private _transparencyErrorAdded: boolean; 
+
+  private _contrastErrors: boolean; 
+  private _contrastErrorAdded: boolean; 
+
   constructor(notebookTracker: INotebookTracker) {
     super();
     this._cellMap = new Map<string, HTMLElement[]>();
     this._listCells = document.createElement('div');
     this._notebookTracker = notebookTracker;
 
+    this._sections = new Map();
+    this._headerErrors = false;
+    this._headerErrorAdded = false; 
+    this.initializeErrorSectionsMap();
+
+    this._altErrors = false;
+    this._altErrorAdded = false; 
+
+    this._transparencyErrors = false;
+    this._transparencyErrorAdded = false; 
+
+    this._contrastErrors = false;
+    this._contrastErrorAdded = false; 
+
+    // make the side bar scrollable
+    this._listCells.style.maxHeight = '580px';
+    this._listCells.style.overflowY = 'scroll';
+    this._listCells.style.paddingRight = '10px'; 
+
     let title = document.createElement('h2');
     title.innerHTML = "Cells with Accessibility Issues";
     title.style.margin = '15px';
 
+    const listItemWrapper = document.createElement('div');
+
+    const listItem = document.createElement('div');
+    listItem.style.display = 'flex';
+    listItem.style.alignItems = 'center';
+    listItem.style.flexWrap = 'nowrap';
+
+    //button
+    const button = document.createElement('button');
+    button.classList.add("jp-toast-button");
+    button.classList.add("jp-mod-small");
+    button.classList.add("jp-Button");
+    button.style.margin = '5px';
+    button.style.marginRight = '5px';
+    button.style.marginLeft = '7px';
+    button.style.flexShrink = '1';
+    button.textContent = "NOTICE: Cell Navigation Issue";
+    button.style.backgroundColor = '#A1A1A1'; //b0afae
+    button.style.fontWeight = 'bold';
+
+
+    //more information icon
+    const infoIcon = document.createElement('span');
+    infoIcon.innerHTML = '&#9432;';
+    infoIcon.style.cursor = 'pointer';
+    infoIcon.style.marginRight = '5px';
+
+    //dropdown box
+    const dropdown = document.createElement('div');
+    dropdown.style.display = 'none';
+    dropdown.style.marginLeft = '10px';
+    dropdown.style.marginRight = '10px';
+    dropdown.style.backgroundColor = 'white'; //#999997
+    dropdown.style.border = '1px solid black';
+    dropdown.style.padding = '5px';
+    const dropDownText = document.createElement('p');
+    dropDownText.textContent = "The jupyterlab-a11y-checker has a known cell navigation issue for Jupyterlab version 4.2.5 or later. To fix this, please navigate to 'Settings' → 'Settings Editor' → Notebook, scroll down to 'Windowing mode', and choose 'defer' from the dropdown. Please note that this option may reduce the performance of the application. For more information, please see the";
+    dropDownText.style.color = "black";
+    dropdown.appendChild(dropDownText);
+    
+    const link = document.createElement('a');
+    link.href = "https://jupyter-notebook.readthedocs.io/en/stable/changelog.html";
+    link.textContent = "Jupyter Notebook changelog.";
+    link.style.color = "#069";
+    link.style.textDecoration = "underline";
+    link.target = "_blank";
+    dropdown.appendChild(link);
+
+    // Toggle dropdown on info icon click
+    infoIcon.addEventListener('click', () => {
+        dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+    });
+
+    // Dismiss button to dismiss the Navigaton Issue notification
+    const dismissButton = document.createElement('button');
+    dismissButton.textContent = "Dismiss";
+    dismissButton.style.backgroundColor = 'black';
+    dismissButton.style.color = 'white';
+    dismissButton.style.border = 'none';
+    dismissButton.style.borderRadius = '5px';
+    dismissButton.style.cursor = 'pointer';
+    dismissButton.style.marginTop = '10px';
+    dismissButton.style.marginLeft = '75px';
+
+    // Remove the Navigation Issue notification on click
+    dismissButton.addEventListener('click', () => {
+      listItemWrapper.remove();
+    })
+    dropdown.appendChild(dismissButton);
+
+
+    listItem.appendChild(button);
+    listItem.appendChild(infoIcon);
+    listItemWrapper.appendChild(listItem)
+    listItemWrapper.appendChild(dropdown);
+    this._listCells.appendChild(listItemWrapper);
+
     this.node.appendChild(title);
     this.node.appendChild(this._listCells);
   }
+
+
+  // add a subsection under a given section
+  createSubsection(sectionName: string, subsectionName: string): void {
+    const section = this._sections.get(sectionName);
+    if (section) {
+      const subsection = document.createElement('div');
+      const subsectionTitle = document.createElement('h4');
+      subsectionTitle.innerHTML = subsectionName;
+      subsection.appendChild(subsectionTitle);
+      section.appendChild(subsection);
+    }
+  }
+
 
   //add a button that would navigate to the cell having the issue
   addCell(cellId: string, buttonContent: string): void {
@@ -593,11 +752,78 @@ class AltCellList extends Widget {
       this.scrollToCell(cellId);
     });
 
+    // check if error is heading related
+    if (buttonContent.includes("Heading") || buttonContent.includes("h1 header")) {
+      this._headerErrors = true;
+    }
+
+     // check if error is alt related
+     if (buttonContent.includes("Alt")) {
+      this._altErrors = true;  
+    }
+
+     // check if error is contrast related
+     if (buttonContent.includes("Contrast")) {
+      this._contrastErrors = true;  
+    }
+
+     // check if error is transparency related
+     if (buttonContent.includes("Transparency")) {
+      this._transparencyErrors = true;  
+    }
+
     //more information icon
     const infoIcon = document.createElement('span');
     infoIcon.innerHTML = '&#9432;';
     infoIcon.style.cursor = 'pointer';
     infoIcon.style.marginRight = '5px';
+
+
+
+    // Create a container div for the input and apply button
+    const container = document.createElement('div');
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
+    container.style.gap = '10px';
+    container.style.marginTop = '10px';
+
+    // Create a text input field to enter header name
+    const inputField = document.createElement('input');
+    inputField.type = 'text';
+    inputField.placeholder = 'Enter header text';
+    inputField.style.width = '100%';
+    inputField.style.padding = '5px';
+    inputField.style.border = '1px solid #ccc';
+    inputField.style.borderRadius = '4px';
+
+
+    // Add the input field to the container
+    container.appendChild(inputField);
+
+    //apply button for h1 headers
+    const applyButton = document.createElement('button');
+    applyButton.textContent = "Add h1 Header";
+    applyButton.style.backgroundColor = '#4CAF50';  
+    applyButton.style.color = 'black';
+    applyButton.style.border = 'none';
+    applyButton.style.padding = '5px 5px';
+    applyButton.style.cursor = 'pointer';
+    applyButton.style.marginTop = '5px';
+
+    // attach apply button logic: Create an <h1> tag when clicked
+    applyButton.addEventListener('click', () => {
+      const inputText = inputField.value.trim(); // Get the text input value
+      if (inputText) {
+        this.addMissingH1HeaderMarkdownCell(inputText); // Add the markdown cell with the user text
+        inputField.value = ''; // Clear the input field after applying
+      } else {
+        alert('Please enter some text for the header.'); // Alert if input is empty
+      }
+
+    });
+
+    container.appendChild(applyButton);
+
 
     //dropdown box
     const dropdown = document.createElement('div');
@@ -608,23 +834,34 @@ class AltCellList extends Widget {
     dropdown.style.border = '1px solid black';
     dropdown.style.padding = '5px';
     const link = document.createElement('a');
+    const summaryText = document.createElement('p');
     if (buttonContent.includes("Transparency")){
       link.href = "https://www.w3.org/WAI/WCAG21/Understanding/use-of-color.html";
       link.textContent = "WCAG transparency guidelines";
+      summaryText.textContent = "Your images do not currently meet WCAG guidelines for color transparency. Resolving this is important because not all users perceive colors in the same way. Ensuring proper color contrast and transparency will make your work more accessible to a wider audience."
     } else if(buttonContent.includes("Heading")){
       link.href = "https://www.w3.org/WAI/tutorials/page-structure/headings/";
       link.textContent = "WCAG headings guidelines";
+      summaryText.textContent = "Your header structure does not adhere to WCAG guidelines for page organization. Properly structured headers are essential for communicating content hierarchy and enabling assistive technologies, like screen readers, to navigate efficiently. Improving this ensures your work is accessible to the widest possible audience."
     } else if(buttonContent.includes("Alt")){
       link.href = "https://www.w3.org/TR/WCAG20-TECHS/H37.html";
       link.textContent = "WCAG alt-text guidelines";
+      summaryText.textContent = "Your images currently lack appropriate alternative text, which does not align with WCAG guidelines. Alternative text is essential for communicating the purpose of images to users who cannot see them, such as those using screen readers or when images fail to load. Adding meaningful descriptions ensures your work is accessible to everyone."
     } else if(buttonContent.includes("Contrast")){
       link.href = "https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html";
       link.textContent = "WCAG text color contrast guidelines";
+      summaryText.textContent = "Your text does not currently meet WCAG guidelines for color contrast. Proper contrast is essential to ensure readability for users with visual impairments or color perception differences. Addressing this issue will make your work accessible to a broader audience."
+    } else if(buttonContent.includes("h1 header")){
+      link.href = "https://www.w3.org/WAI/tutorials/page-structure/headings/";
+      link.textContent = "WCAG headings guidelines";
+      summaryText.textContent = "Your header structure does not adhere to WCAG guidelines for page organization. Properly structured headers are essential for communicating content hierarchy and enabling assistive technologies, like screen readers, to navigate efficiently. Improving this ensures your work is accessible to the widest possible audience."
     }
+
     link.style.color = "#069";
     link.style.textDecoration = "underline";
     
     link.target = "_blank";
+    dropdown.appendChild(summaryText);
     dropdown.appendChild(link);
 
     // Toggle dropdown on info icon click
@@ -650,31 +887,181 @@ class AltCellList extends Widget {
 
     if (add) {
       listItem.appendChild(button);
-      listItem.appendChild(infoIcon);
+      if (buttonContent.includes("h1 header")){
+        listItem.appendChild(container);
+      } else{
+        listItem.appendChild(infoIcon);
+      }
       listItemWrapper.appendChild(listItem)
       listItemWrapper.appendChild(dropdown);
       this._listCells.appendChild(listItemWrapper);
     }
 
+    // Add the "Headers Errors" section header if there are header errors
+    if (this._headerErrors && !this._headerErrorAdded) {
+      this.createHeaderErrorSection();
+      this._errorCategoryMap.get("Header Errors")?.add(cellId);
+      this._headerErrorAdded = true; // prevent duplicate headers
+    }
+
+
+     // Add the "Headers Errors" section header if there are header errors
+     if (this._altErrors && !this._altErrorAdded) {
+      //check if the 
+      this.createAltErrorSection();
+      this._errorCategoryMap.get("Alt Text Errors")?.add(cellId);
+      this._altErrorAdded = true; // prevent duplicate headers
+    }
+
+    // Add the "Headers Errors" section header if there are header errors
+    if (this._transparencyErrors && !this._transparencyErrorAdded) {
+      //check if the 
+      this.createTransparencyErrorSection();
+      this._errorCategoryMap.get("Transparency Errors")?.add(cellId);
+      this._transparencyErrorAdded = true; // prevent duplicate headers
+    }
+
+
+    // Add the "Headers Errors" section header if there are header errors
+    if (this._contrastErrors && !this._contrastErrorAdded) {
+      //check if the 
+      this.createContrastErrorSection();
+      this._errorCategoryMap.get("Contrast Errors")?.add(cellId);
+
+      this._contrastErrorAdded = true; // prevent duplicate headers
+    }
+
+
     // this.showOnlyVisibleCells();
   }
+
+
+    /**
+   * Add a new markdown cell and open the sidebar for editing.
+   */
+  addMissingH1HeaderMarkdownCell(headerText: string) {
+    const notebookPanel = this._notebookTracker.currentWidget;
+    const notebook = notebookPanel!.content;
+
+    // Create a new markdown cell
+    const markdownCell = {
+      cell_type: 'markdown',
+      metadata: {},
+      source: "# " + headerText,
+      trusted: true,
+    };
+    notebook.model?.sharedModel.insertCell(0, markdownCell);
+  }
+
+  private createHeaderErrorSection(): void {
+    // Create the h1 header
+    const h1Header = document.createElement('h3');
+    h1Header.textContent = "Header Errors";
+    h1Header.style.margin = '15px';
+
+    // Add header and apply button to the sidebar
+    const errorSection = document.createElement('div');
+    errorSection.id = "header-errors-section"; // Assign an ID for later removal
+
+    errorSection.appendChild(h1Header);
+    //errorSection.appendChild(applyButton);
+
+    // Append the section to the sidebar
+    this._listCells.appendChild(errorSection);
+  }
+
+  private createAltErrorSection(): void {
+    // Create the h1 header
+    const altTextHeader = document.createElement('h3');
+    altTextHeader.textContent = "Alt Text Errors";
+    altTextHeader.style.margin = '15px';
+
+    // Add header and apply button to the sidebar
+    const errorSection = document.createElement('div');
+    errorSection.id = "alt-text-errors-section"; // Assign an ID for later removal
+
+    errorSection.appendChild(altTextHeader);
+    //errorSection.appendChild(applyButton);
+
+    // Append the section to the sidebar
+    this._listCells.appendChild(errorSection);
+  }
+
+
+
+
+
+  private createContrastErrorSection(): void {
+    // Create the h1 header
+    const h1Header = document.createElement('h3');
+    h1Header.textContent = "Contrast Errors";
+    h1Header.style.margin = '15px';
+
+    // Add header and apply button to the sidebar
+    const errorSection = document.createElement('div');
+    errorSection.id = "contrast-errors-section"; // Assign an ID for later removal
+
+    errorSection.appendChild(h1Header);
+    //errorSection.appendChild(applyButton);
+
+    // Append the section to the sidebar
+    this._listCells.appendChild(errorSection);
+  }
+
+
+
+  private createTransparencyErrorSection(): void {
+    // Create the h1 header
+    const h1Header = document.createElement('h3');
+    h1Header.textContent = "Transparency Errors";
+    h1Header.style.margin = '15px';
+
+
+    // Add header and apply button to the sidebar
+    const errorSection = document.createElement('div');
+    errorSection.id = "transparency-errors-section"; // Assign an ID for later removal
+    errorSection.appendChild(h1Header);
+    //errorSection.appendChild(applyButton);
+
+    // Append the section to the sidebar
+    this._listCells.appendChild(errorSection);
+  }
+
+
+
+
 
   //remove cell from sidebar and from running map
   removeCell(cellId: string): void {
     //get list of error buttons related to this cell
     const listItem = this._cellMap.get(cellId);
+    //console.log("CELL MAP");
+    //console.log(this._cellMap);
     if (listItem != null){
+      //console.log("LIST ITEMS");
+      //console.log(listItem);
+      
       listItem.forEach((btn) => {
         for (let item of this._listCells.children) {
           if (btn.id == item.id) {
+            console.log("ITEM looks like:");
+            console.log(item.id);
             this._listCells.removeChild(btn);
           }
+          
         }
       });
+
+      
+
+
+      
     }
     if(this._cellMap.has(cellId)){
       this._cellMap.delete(cellId);
     }
+
+    //maybe do the removal here
   }
 
   //scroll to cell once clicked
@@ -699,7 +1086,7 @@ class AltCellList extends Widget {
     }
   }
 
-  //helper safety method that only shows issued for cells that
+  //helper safety method that only shows issues for cells that
   // are visible ONLY in the currently opened jupyterlab notebook
   showOnlyVisibleCells(): void {
     console.log("showing only visible cells");
@@ -717,10 +1104,76 @@ class AltCellList extends Widget {
         }
       }
       if(!cellExists){
-        this.removeCell(k);
+        this.removeCell(k);        
+      }
+    });
+
+    this._errorCategoryMap.forEach((errorSet, category) => {
+      //console.log("Error Category Map");
+      //console.log([category, errorSet]);
+      for (let i = 0; i < notebook.widgets.length; i++) {
+        const cell = notebook.widgets[i];
+        if (errorSet.has(cell.model.id)) {
+          break
+        }
+        else {
+          errorSet.delete(cell.model.id);
+          //console.log(`Removed cell ID: ${cell.model.id} from category: ${category}`);
+        }
+
+      }
+    });
+
+    // check and remove h3 element if the associated set is empty
+    this.checkAndRemoveEmptyErrorCategories();
+    console.log("CELL MAP");
+    console.log(this._cellMap);   
+
+  }
+
+  // check for empty error categories and remove h3 elements
+  private checkAndRemoveEmptyErrorCategories(): void {
+    //console.log("Error Map");
+    //console.log(this._errorCategoryMap);
+    console.log(`Current DOM structure:`, this._listCells);
+    this._errorCategoryMap.forEach((errorSet, category) => {
+      console.log("CATEGORY");
+      console.log(category);
+      
+
+      if (errorSet.size === 0) {
+        var sectionId = "";
+        if (category == "Header Errors") {
+          sectionId = "header-errors-section";
+        }
+        if (category == "Alt Text Errors") {
+          sectionId = "alt-text-errors-section";
+        }
+        if (category == "Contrast Errors") {
+          sectionId = "contrast-errors-section";
+        }
+        if (category == "Transparency Errors") {
+          sectionId = "transparency-errors-section";
+        }
+        //console.log(category);
+        //console.log("Section ID: " + sectionId);
+        const sectionElement = document.getElementById(sectionId);
+        console.log("SECTION ELEMENT");
+        console.log(sectionElement);
+        sectionElement?.remove;
+        //this._listCells.removeChild(sectionElement);
+
+        if (sectionElement) {
+          this._listCells.removeChild(sectionElement);
+          //console.log(`Removed section: ${sectionId}`);
+
+        }
       }
     });
   }
+
+
+
 }
 
 export default plugin;
